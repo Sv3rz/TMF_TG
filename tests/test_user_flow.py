@@ -7,6 +7,8 @@ from bot.db.models import Priority, TicketStatus
 from helpers import cb_update, kb_of, msg_update
 
 USER = 1001
+ADMIN = 111
+GROUP_CHAT = -1001234567890
 TICKETS_CHAT = -1001234567890
 
 
@@ -55,6 +57,64 @@ async def test_create_ticket_flow(app):
 
     board = [m for m in app.session.sends() if m.chat_id == TICKETS_CHAT]
     assert board and "#0001" in board[0].text
+
+
+async def test_message_without_button_starts_ticket(app):
+    await app.dp.feed_raw_update(app.bot, msg_update(USER, "/start"))
+    await app.dp.feed_raw_update(app.bot, msg_update(USER, "Сломался принтер"))
+
+    assert await _ctx(app).get_state() == "New:priority"
+    data = await _ctx(app).get_data()
+    assert data["description"] == "Сломался принтер"
+
+    await app.dp.feed_raw_update(app.bot, cb_update(USER, "prio:medium"))
+    await app.dp.feed_raw_update(app.bot, msg_update(USER, "Офис 5"))
+    await app.dp.feed_raw_update(app.bot, cb_update(USER, "u:send"))
+
+    ticket = await repo.get_ticket(1)
+    assert ticket is not None
+    assert ticket.description == "Сломался принтер"
+    assert ticket.place == "Офис 5"
+
+
+async def test_photo_album_without_button_starts_ticket(app):
+    await app.dp.feed_raw_update(app.bot, msg_update(USER, "/start"))
+
+    first = msg_update(USER, caption="Розетка", photo=("p1",), media_group_id="gq1")
+    second = msg_update(USER, photo=("p2",), media_group_id="gq1")
+    await asyncio.gather(
+        app.dp.feed_raw_update(app.bot, first),
+        app.dp.feed_raw_update(app.bot, second),
+    )
+
+    assert await _ctx(app).get_state() == "New:priority"
+    data = await _ctx(app).get_data()
+    assert data["description"] == "Розетка"
+    assert len(data["files"]) == 2
+
+
+async def test_admin_message_does_not_start_ticket(app):
+    await app.dp.feed_raw_update(app.bot, msg_update(ADMIN, "привет"))
+
+    assert await _ctx(app, ADMIN).get_state() is None
+    assert (await repo.list_by_tab("all")).total == 0
+
+
+async def test_group_message_does_not_start_ticket(app):
+    await app.dp.feed_raw_update(
+        app.bot,
+        msg_update(USER, "заявка", chat_id=GROUP_CHAT, chat_type="supergroup"),
+    )
+
+    assert await _ctx(app).get_state() is None
+    assert (await repo.list_by_tab("all")).total == 0
+
+
+async def test_unknown_command_does_not_start_ticket(app):
+    await app.dp.feed_raw_update(app.bot, msg_update(USER, "/unknown"))
+
+    assert await _ctx(app).get_state() is None
+    assert (await repo.list_by_tab("all")).total == 0
 
 
 async def test_place_updates_from_latest_ticket(app):

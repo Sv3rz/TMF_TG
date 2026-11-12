@@ -291,6 +291,14 @@ async def close_ticket(
     return ActionResult.OK, updated
 
 
+def admin_card_caption(ticket: Ticket, *, limit: int = 1000) -> str:
+    """Подпись к медиа: карточка, обрезанная под лимит caption (1024)."""
+    text = admin_card_text(ticket)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
 def admin_card_text(ticket: Ticket) -> str:
     """Карточка заявки для администратора."""
     files = _ticket_files(ticket.attachments)

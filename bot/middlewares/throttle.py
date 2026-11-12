@@ -29,6 +29,11 @@ class ThrottleMiddleware(BaseMiddleware):
         if user is None:
             return await handler(event, data)
 
+        # Части альбома приходят почти одновременно — их нельзя отбрасывать,
+        # иначе AlbumMiddleware соберёт только первое фото.
+        if isinstance(event, Message) and event.media_group_id:
+            return await handler(event, data)
+
         now = monotonic()
         last = self._last_seen.get(user.id, 0.0)
         if now - last < self.rate:

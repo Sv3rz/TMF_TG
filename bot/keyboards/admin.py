@@ -57,10 +57,32 @@ def admin_card_kb(ticket: Ticket, tab: str, page: int) -> InlineKeyboardMarkup:
         kb.button(text="✅ Закрыть", callback_data=f"act:{ticket.id}:close")
         sizes.append(2)
     if any(a.kind == "ticket" for a in ticket.attachments):
-        kb.button(text="📎 Вложения", callback_data=f"act:{ticket.id}:files")
+        kb.button(text="📎 Показать вложение", callback_data=f"act:{ticket.id}:files")
         sizes.append(1)
 
     kb.button(text="⬅️ К списку", callback_data=f"a:list:{tab}:{page}")
+    sizes.append(1)
+
+    kb.adjust(*sizes)
+    return kb.as_markup()
+
+
+def admin_media_kb(
+    ticket: Ticket, tab: str, page: int, total: int, index: int
+) -> InlineKeyboardMarkup:
+    """Кнопки под медиа-карточкой: листание и возврат к текстовой карточке."""
+    kb = InlineKeyboardBuilder()
+    sizes: list[int] = []
+
+    if total > 1:
+        if index > 1:
+            kb.button(text="⬅️", callback_data=f"file:{ticket.id}:{index - 1}")
+            sizes.append(1)
+        if index < total:
+            kb.button(text="➡️", callback_data=f"file:{ticket.id}:{index + 1}")
+            sizes.append(1)
+
+    kb.button(text="📎 Скрыть вложение", callback_data=f"act:{ticket.id}:hide_files")
     sizes.append(1)
 
     kb.adjust(*sizes)

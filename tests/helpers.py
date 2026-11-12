@@ -100,12 +100,14 @@ def msg_update(
     photo: tuple[str, ...] = (),
     document: str | None = None,
     media_group_id: str | None = None,
+    chat_id: int | None = None,
+    chat_type: str = "private",
 ) -> dict:
     seq = next(_counter)
     message: dict = {
         "message_id": seq,
         "date": int(time.time()),
-        "chat": {"id": tg_id, "type": "private"},
+        "chat": {"id": tg_id if chat_id is None else chat_id, "type": chat_type},
         "from": person(tg_id),
     }
     if text is not None:

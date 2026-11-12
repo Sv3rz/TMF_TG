@@ -6,9 +6,11 @@ import logging
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
+from bot.config import get_settings
 from bot.db import repo
 from bot.db.models import Priority
 from bot.keyboards.user import after_create_kb, cancel_row, confirm_kb, place_kb, priority_kb
@@ -99,7 +101,8 @@ async def on_priority(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.message is not None:
         await callback.message.answer(
             "Укажите место заявки.\n" \
-            "Выберите предыдущее место или напишите новое сообщением.",
+            "Выберите предыдущее место или напишите новое сообщением.\n" \
+            "Пример: '1 этаж студия'",
             reply_markup=place_kb(default_place),
         )
     await callback.answer()
@@ -156,10 +159,9 @@ async def on_send(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
         await callback.answer("Сессия истекла, начните заново", show_alert=True)
         return
 
-    user = await repo.get_user(callback.from_user.id)
-    if user is None:
-        await callback.answer("Сначала отправьте /start", show_alert=True)
-        return
+    user = await repo.get_or_create_user(
+        callback.from_user.id, is_admin=get_settings().is_admin(callback.from_user.id)
+    )
 
     # Снимаем состояние заранее: повторный клик не создаст дубль.
     await state.clear()
@@ -248,3 +250,43 @@ async def priority_stale(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "u:place:default")
 async def place_stale(callback: CallbackQuery) -> None:
     await callback.answer("Сессия истекла, начните заново", show_alert=True)
+
+
+@router.message(StateFilter(None), F.chat.type == "private")
+async def quick_ticket(
+    message: Message, state: FSMContext, album: list[Message] | None = None
+) -> None:
+    """Заявка сразу сообщением — без нажатия «📝 Создать заявку».
+
+    Сообщение вне какого-либо FSM-состояния считаем описанием: сразу переходим
+    к выбору приоритета. Так ничего не теряется, если человек пишет боту как в чат.
+    """
+    user = message.from_user
+    if user is None:
+        return
+
+    sources = album or [message]
+    files = collect_files(sources)
+    description = extract_text(sources)
+
+    if description and description.startswith("/") and not files:
+        await message.answer("Неизвестная команда. /start — главное меню.")
+        return
+
+    # Админам заявки не создаём: у них своя панель по /start.
+    if get_settings().is_admin(user.id):
+        return
+
+    if not description and not files:
+        await message.answer(
+            "Не понял сообщение. Нажмите «📝 Создать заявку» "
+            "или пришлите текст, фото или видео."
+        )
+        return
+
+    await state.update_data(description=description, files=files)
+    await state.set_state(New.priority)
+    await message.answer(
+        "📝 Описание принято. Выберите приоритет заявки:",
+        reply_markup=priority_kb(),
+    )
